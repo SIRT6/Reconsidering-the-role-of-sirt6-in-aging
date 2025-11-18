@@ -1,0 +1,13 @@
+Hallmark,Paper_Count,Average_Score,Max_Score,Min_Score,Total_Score
+"cellular senescence",135,0.679200,1.461291,0.250535,91.691947
+"chronic inflammation",267,0.555113,1.565963,0.095265,148.215042
+"deregulated nutrient sensing",173,0.416777,1.166008,0.000000,72.102388
+"disabled macroautophagy",100,0.794126,1.759527,0.310265,79.412615
+"dysbiosis",7,0.516471,1.535539,0.074834,3.615297
+"epigenetic alterations",1203,1.419926,5.289153,0.130994,1708.171509
+"genome instability",267,0.858561,2.675569,0.000000,229.235742
+"intercellular communication",31,0.454494,0.793564,0.000000,14.089329
+"loss of proteostasis",39,0.570667,2.238266,0.109602,22.256005
+"mitochondrial dysfunction",204,0.710881,1.967737,0.000000,145.019772
+"stem cell exhaustion",81,0.477720,1.343275,0.000000,38.695343
+"telomere attrition",55,0.837690,1.859359,0.000000,46.072975
