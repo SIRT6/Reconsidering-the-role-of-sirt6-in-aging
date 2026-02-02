@@ -60,39 +60,43 @@ SIRT6_db/
         ├── samples.parquet
         ├── experiments.parquet
         └── samples_to_experiment.parquet
+```
 
 ---
 
-## Usage
+## Usage 
 
-Run the script from the command line using `Rscript`.
+Run the script from the command line using Rscript.
 
 ### Example command
 
 ```bash
 Rscript DE_script_human.R \
-  --expr_path /tank/projects/public_data/Sirt6_datasets/Expression/SIRT6_db/expression/homo_sapiens \
-  --meta_path /tank/projects/public_data/Sirt6_datasets/Expression/SIRT6_db/metadata/homo_sapiens \
+  --expr_path /path/to/directory/with/count/matrices/for/human \
+  --meta_path /path/to/directory/with/human/metadata \
   --out_dir /path/to/output/homo_sapiens
-
-Arguments
-	•	--expr_path
-Path to the directory containing expression matrices (*.parquet) for one organism.
-	•	--meta_path
-Path to the directory containing metadata tables for the same organism.
-	•	--out_dir
-Output directory where results and logs will be written (locally). 
+```
 
 ---
 
-## Output 
+## Output
 
-The script creates the following structure in the output directory:
+The script creates the following directory structure in the specified output path:
+```text
 out_dir/
 ├── results/
 │   └── <GSE_ID>_<stratum>_deseq2.parquet
 └── logs/
     └── errors.log
+```
+### Output description
 
-•	Each result file corresponds to one experiment (and one stratum, if applicable).
-•	Errors encountered during processing are logged in logs/errors.log.
+•	results/
+Contains differential expression results for each experiment and stratum.
+Each file is a Parquet table with DESeq2 statistics (log2FC, p-value, adjusted p-value).
+•	logs/errors.log
+Contains a record of experiments or strata that failed during processing,
+along with error messages.
+
+
+
