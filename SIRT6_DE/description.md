@@ -49,15 +49,17 @@ The following R packages are required:
 ## Input data
 
 The script expects the SIRT6 database to have the following structure:
+
+```text
 SIRT6_db/
 ├── expression/
 │   └── homo_sapiens/
 │       └── <GSE_ID>.parquet
-├── metadata/
-│   └── homo_sapiens/
-│       ├── samples.parquet
-│       ├── experiments.parquet
-│       └── samples_to_experiment.parquet
+└── metadata/
+    └── homo_sapiens/
+        ├── samples.parquet
+        ├── experiments.parquet
+        └── samples_to_experiment.parquet
 
 ---
 
