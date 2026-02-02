@@ -92,9 +92,11 @@ out_dir/
 ### Output description
 
 - results/
+
 Contains differential expression results for each experiment and stratum.
 Each file is a Parquet table with DESeq2 statistics (log2FC, p-value, adjusted p-value).
 - logs/errors.log
+
 Contains a record of experiments or strata that failed during processing,
 along with error messages.
 
