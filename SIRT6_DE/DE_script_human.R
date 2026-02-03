@@ -65,14 +65,29 @@ gse_ids <- sub("\\.parquet$", "", basename(expr_files))
 
 # Filter lowly expressed genes
 # The filtering rule: gene is considered "expressed" in a group if it has at least 10 counts in enough samples of that group.
-# Gene is kept if it passes these criteria in at least one biological group.
+# Gene is kept if it passes these criteria in both of biological groups.
 filter_counts <- function(counts, meta, min_count = 10) {
-  keep <- rep(FALSE, nrow(counts))
-  for (group in levels(meta$sirt6_status)) { # look at genes separately in each biological group
+  
+  keep <- rep(TRUE, nrow(counts))
+  
+  # Loop over biological groups 
+  for (group in levels(meta$sirt6_status)) { 
+    # Samples belonging to this group
     s <- rownames(meta) [meta$sirt6_status == group]
-    n_min <- max(2, floor(length(s) / 2)) # enough samples - at least 2 or half of the samples in a group
-    keep <- keep | (rowSums(counts[, s, drop = FALSE] >= min_count) >= n_min)
+    
+    # Minimum number of samples required to express the genes
+    n_min <- max(2, floor(length(s) / 2)) # at least 2 or half of the samples in a group (whichever is larger)
+    
+    # Check expression criterion for this group
+    keep_group <- rowSums(
+      counts[, s, drop = FALSE] >= min_count
+      ) >= n_min
+    
+    # Conservative rule: gene must pass in both of the groups
+    keep <- keep & keep_group
   }
+  
+  # Return filtered count matrix
   counts[keep, , drop = FALSE]
 }
 
