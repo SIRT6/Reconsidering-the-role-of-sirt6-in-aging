@@ -8,7 +8,7 @@ and performs DESeq2-based differential expression analysis in a reproducible way
 
 ---
 
-## Script overview.
+## Script overview
 
 ### `DE_script_human.R`
 
