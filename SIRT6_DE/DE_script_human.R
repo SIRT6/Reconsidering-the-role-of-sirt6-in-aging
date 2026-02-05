@@ -21,17 +21,18 @@ get_arg <- function(x) {
   args[i + 1]
 }
 
+organism <- get_arg("--organism") # The organism
 expr_path <- get_arg("--expr_path") # Count matrix
 meta_path <- get_arg("--meta_path") # Meta data
 out_dir <- get_arg("--out_dir") # Output dir
 
 # Prevent from mistake
-if (is.null(expr_path) || is.null(meta_path) || is.null(out_dir)) {
-  stop("Usage: --expr_path --meta_path --out_dir")
+if (is.null(expr_path) || is.null(meta_path) ||
+    is.null(out_dir) || is.null(organism)) {
+  stop("Usage: --expr_path --meta_path --out_dir --organism")
 }
 
-organism <- "homo_sapiens"
-
+# Create output dir if they are not already existed 
 dir.create(out_dir, recursive = TRUE, showWarnings = FALSE)
 dir.create(file.path(out_dir, "results"), showWarnings = FALSE)
 dir.create(file.path(out_dir, "logs"), showWarnings = FALSE)
@@ -66,14 +67,15 @@ gse_ids <- sub("\\.parquet$", "", basename(expr_files))
 # Filter lowly expressed genes
 # The filtering rule: gene is considered "expressed" in a group if it has at least 10 counts in enough samples of that group.
 # Gene is kept if it passes these criteria in both of biological groups.
-filter_counts <- function(counts, meta, min_count = 10) {
+filter_counts <- function(counts, meta, group_var, min_count = 10) { # group_var - a column in meta that defines the groups
   
+  # Start by assuming all genes are kept -> then remove genes that fail the filter
   keep <- rep(TRUE, nrow(counts))
   
   # Loop over biological groups 
-  for (group in levels(meta$sirt6_status)) { 
+  for (group in levels(meta[[group_var]])) { 
     # Samples belonging to this group
-    s <- rownames(meta) [meta$sirt6_status == group]
+    s <- rownames(meta) [meta[[group_var]] == group]
     
     # Minimum number of samples required to express the genes
     n_min <- max(2, floor(length(s) / 2)) # at least 2 or half of the samples in a group (whichever is larger)
@@ -95,10 +97,12 @@ filter_counts <- function(counts, meta, min_count = 10) {
 ########## Main loop ####
 #########################
 
+message("Running DE analysis for organism: ", organism)
+
 for (i in seq_along(expr_files)) { # One iteration = one GSE
   
   gse <- gse_ids[i]
-  message("processing ", gse)
+  message("Processing ", gse)
   
   tryCatch({
     
@@ -114,20 +118,13 @@ for (i in seq_along(expr_files)) { # One iteration = one GSE
     # Subsets metadata to match the count matrix
     meta <- samples_meta[samples, , drop = FALSE]
     
-    ############################
-    ## Derive SIRT6 status #####
-    ############################
-    
-    meta$sirt6_status <- ifelse(meta$genotype == "WT", "control", "SIRT6") # WT -> control, anything else (KO, Het, OE) -> SIRT6
-    meta$sirt6_status <- factor(meta$sirt6_status, levels = c("control", "SIRT6")) # control - reference level, SIRT6 - test group
-    
     ##############################
     ## Define stratification #####
     ##############################
     
     # Split experiments by confounding factors (treatment/cell type) -> run separate DE per treatment/cell type
     
-    strata <- list(all = rep(TRUE, nrow(meta))) # default: no splitting
+    strata <- list(all = seq_len(nrow(meta))) # default: no splitting
     
     # Split the experiment by treatment 
     if ("treatment" %in% colnames(meta) && length(unique(meta$treatment)) > 1) {
@@ -149,48 +146,136 @@ for (i in seq_along(expr_files)) { # One iteration = one GSE
       meta_s <- meta[idx, , drop = FALSE] # subset metadata to only these samples
       counts_s <- counts[, rownames(meta_s), drop = FALSE] # subset the count matrix to the same samples
       
-      if (any(table(meta_s$sirt6_status) < 2)) next # if number of samples per group >=2 continue the analysis
+      # Lists all genotypes present
+      genotypes <- unique(meta_s$genotype)
       
-      counts_f <- filter_counts(counts_s, meta_s) # filter lowly expressed genes
-      if (nrow(counts_f) < 100) next # go next only if there are enough genes after filtering 
+      # Require WT as a reference
+      if (!"WT" %in% genotypes) next
       
-      # Build DESeq object
-      dds <- DESeqDataSetFromMatrix(
-        round(counts_f), 
-        meta_s,
-        design = ~ sirt6_status
-      )
+      # Genotypes to compare against WT
+      test_genotypes <- setdiff(genotypes, "WT")
       
-      # Run DESeq
-      dds <- DESeq(dds, quiet = TRUE)
+      ############################
+      ### Loop over genotypes ####
+      ############################
       
-      # Extract results and perform DESeq2 independent filtering
-      res <- results(
-        dds,
-        contrast = c("sirt6_status", 'SIRT6', "control") # compare SIRT6 vs control
-      )
-      
-      # Convert DESeq2 results into a tidy data frame
-      out <- as.data.frame(res) %>%
-        rownames_to_column("gene_id")
-      
-      # Annotate results 
-      out$experiment_id <- gse
-      out$stratum <- s
-      out$organism <- organism
-      
-      # Save files in a safer format (replace anything that is not letters, numbers, ., _, - with _)
-      s_safe <- gsub("[^A-Za-z0-9._-]", "_", s)
-      
-      # Save DE results (in parquet format)
-      write_parquet(
-        out,
-        file.path(
-          out_dir,
-          "results",
-          paste0(gse, "_", s_safe, "_deseq2.parquet")
+      for (g in test_genotypes) { # Each iteration = one contrast (WT vs KO, WT vs Het, etc.)
+        
+        # Sanitize genotype name
+        g_factor <- make.names(g)
+        
+        # Subset for contrast
+        meta_g <- meta_s %>%
+          dplyr::filter(genotype %in% c("WT", g))
+        
+        if (any(table(meta_g$genotype) < 2)) next
+        
+        # Subset counts to the same samples
+        counts_g <- counts_s[, rownames(meta_g), drop = FALSE]
+        
+        # Define comparison variable
+        meta_g$genotype_cmp <- factor(
+          make.names(meta_g$genotype),
+          levels = c("WT", g_factor) # WT is the reference
         )
-      )
+        
+        # Filter lowly expressed genes
+        counts_f <- filter_counts(
+          counts = counts_g,
+          meta = meta_g,
+          group_var = "genotype_cmp"
+        )
+        
+        # Skip contrasts with too few genes after filtering
+        if (nrow(counts_f) < 100) next
+        
+        #######################################
+        # Build design formula dynamically ####
+        #######################################
+        
+        # Candidate covariates to include if available
+        candidate_covariates <- c("sex", "age", "strain")
+        
+        usable_covariates <- c()
+        
+        for (v in candidate_covariates) {
+          if (v %in% colnames(meta_g)) {
+            x <- meta_g[[v]]
+            
+            # Use covariates only if:
+            # 1) not all NA
+            # 2) more than one unique non-NA value
+            if (!all(is.na(x)) && length(unique(x[!is.na(x)])) > 1) {
+              usable_covariates <- c(usable_covariates, v)
+            }
+          }
+        }
+        
+        # Final design terms:
+        # covariates first, genotype last (as it's effect of interest)
+        design_terms <- c(usable_covariates, "genotype_cmp")
+        
+        design_formula <- as.formula(
+          paste("~", paste(design_terms, collapse = " + "))
+        )
+        
+        message("Design formula: ", deparse(design_formula))
+        
+        # Build DESeq object
+        
+        dds <- DESeqDataSetFromMatrix(
+          countData = round(counts_f),
+          colData = meta_g,
+          design = design_formula
+        )
+        
+        # Run DESeq (fits the negative binomial model)
+        dds <- DESeq(dds, quiet = TRUE)
+        
+        # Extract DE results for g vs WT
+        res <- results(
+          dds,
+          contrast = c("genotype_cmp", g_factor, "WT")
+        )
+        
+        ############################
+        ##### Collect results ######
+        ############################
+        
+        # Convert DESeq2 results into a tidy data frame
+        out <- as.data.frame(res) %>%
+          rownames_to_column("gene_id")
+        
+        # Add a column indicating significant genes
+        out <- out %>%
+          mutate(
+            significant = !is.na(padj) & padj < 0.05
+          )
+        
+        # Annotate results
+        out$experiment_id <- gse
+        out$stratum <- s
+        out$organism <- organism
+        out$contrast <- paste0(g_factor, "_vs_WT")
+        
+        ############################
+        ##### Write the output #####
+        ############################
+        
+        # Save files in a safer format (replace anything that is not letters, numbers, ., _, - with _)
+        s_safe <- gsub("[^A-Za-z0-9._-]", "_", s)
+        g_file <- gsub("[^A-Za-z0-9._-]", "_", g)
+        
+        # Save DE results in parquet format
+        write_parquet(
+          out,
+          file.path(
+            out_dir,
+            "results",
+            paste0(gse, "_", s_safe, "_", g_file, "_vs_WT_deseq2.parquet")
+          )
+        )
+      }
     }
     
   # Error handling (if any experiment failed)
@@ -203,14 +288,4 @@ for (i in seq_along(expr_files)) { # One iteration = one GSE
   })
 }
 
-message("Human DE analysis complete.")
-
-
-
-
-
-
-
-
-
-
+message(organism, " DE analysis complete.")
