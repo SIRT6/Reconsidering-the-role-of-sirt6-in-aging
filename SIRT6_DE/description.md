@@ -44,6 +44,8 @@ For each organism, the script performs the following steps:
 ```
 Each contrast is analyzed independently and saved as a separate result file.
 
+---
+
 ## Requirements
 
 ### Software
