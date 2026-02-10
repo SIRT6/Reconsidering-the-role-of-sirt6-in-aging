@@ -104,6 +104,10 @@ for (i in seq_along(expr_files)) { # One iteration = one GSE
   gse <- gse_ids[i]
   message("Processing ", gse)
   
+  # Create experiment-specific output directory
+  gse_out_dir <- file.path(out_dir, "results", gse)
+  dir.create(gse_out_dir, showWarnings = FALSE, recursive = TRUE)
+  
   tryCatch({
     
     # Load count matrix
@@ -118,23 +122,47 @@ for (i in seq_along(expr_files)) { # One iteration = one GSE
     # Subsets metadata to match the count matrix
     meta <- samples_meta[samples, , drop = FALSE]
     
+    ########################################
+    ## Normalize stratification variables ##
+    ########################################
+    
+    # Ensure consistent encoding for stratification columns
+    for (v in c("treatment", "cell_type", "condition")) {
+      if (v %in% colnames(meta)) {
+        meta[[v]] <- trimws(as.character(meta[[v]]))
+      }
+    }
+  
+    
     ##############################
     ## Define stratification #####
     ##############################
     
-    # Split experiments by confounding factors (treatment/cell type) -> run separate DE per treatment/cell type
+    # Split experiments by confounding factors (treatment/cell type/condition) -> run separate DE per treatment/cell type/condition
     
     strata <- list(all = seq_len(nrow(meta))) # default: no splitting
     
-    # Split the experiment by treatment 
-    if ("treatment" %in% colnames(meta) && length(unique(meta$treatment)) > 1) {
-      strata <- split(seq_len(nrow(meta)), meta$treatment)
+    # Candidate splitting variables
+    strat_vars <- c("treatment", "cell_type", "condition")
+    
+    for (v in strat_vars) {
+      if (v %in% colnames(meta)) {
+        
+        x <- meta[[v]]
+        
+        # Use this variable for splitting only if:
+        # 1) not all NA
+        # 2) more than one unique non-NA value
+        if (!all(is.na(x)) && length(unique(x[!is.na(x)])) > 1) {
+          
+          message("Stratifying experiment ", gse, " by ", v)
+          
+          strata <- split(seq_len(nrow(meta)), x)
+          break # use only one splitting variable
+        }
+      }
     }
     
-    # Split the experiment by cell type
-    if ("cell_type" %in% colnames(meta) && length(unique(meta$cell_type)) > 1) {
-      strata <- split(seq_len(nrow(meta)), meta$cell_type)
-    }
     
     ############################
     ### Run DE per stratum #####
@@ -144,10 +172,13 @@ for (i in seq_along(expr_files)) { # One iteration = one GSE
       
       idx <- strata[[s]] # indices of samples belonging to the stratum
       meta_s <- meta[idx, , drop = FALSE] # subset metadata to only these samples
+      
       counts_s <- counts[, rownames(meta_s), drop = FALSE] # subset the count matrix to the same samples
       
       # Lists all genotypes present
       genotypes <- unique(meta_s$genotype)
+      
+      message(gse, " genotypes: ", paste(genotypes, collapse = ", "))
       
       # Require WT as a reference
       if (!"WT" %in% genotypes) next
@@ -160,6 +191,7 @@ for (i in seq_along(expr_files)) { # One iteration = one GSE
       ############################
       
       for (g in test_genotypes) { # Each iteration = one contrast (WT vs KO, WT vs Het, etc.)
+        message("Testing contrast: WT vs ", g)
         
         # Sanitize genotype name
         g_factor <- make.names(g)
@@ -167,6 +199,9 @@ for (i in seq_along(expr_files)) { # One iteration = one GSE
         # Subset for contrast
         meta_g <- meta_s %>%
           dplyr::filter(genotype %in% c("WT", g))
+        
+        message("Sample counts:")
+        print(table(meta_g$genotype))
         
         if (any(table(meta_g$genotype) < 2)) next
         
@@ -185,6 +220,8 @@ for (i in seq_along(expr_files)) { # One iteration = one GSE
           meta = meta_g,
           group_var = "genotype_cmp"
         )
+        
+        message("Genes after filtering: ", nrow(counts_f))
         
         # Skip contrasts with too few genes after filtering
         if (nrow(counts_f) < 100) next
@@ -270,8 +307,7 @@ for (i in seq_along(expr_files)) { # One iteration = one GSE
         write_parquet(
           out,
           file.path(
-            out_dir,
-            "results",
+            gse_out_dir,
             paste0(gse, "_", s_safe, "_", g_file, "_vs_WT_deseq2.parquet")
           )
         )
