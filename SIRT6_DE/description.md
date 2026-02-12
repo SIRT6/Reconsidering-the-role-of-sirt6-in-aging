@@ -19,7 +19,7 @@ Key features:
 - Uses sample metadata from the SIRT6 database
 - Performs genotype-resolved comparisons:
   - WT vs each non-WT genotype (e.g. KO, Het, OE, mutant)
-- Stratifies experiments by **treatment** or **cell type** when applicable
+- Stratifies experiments by **treatment**, **cell type** or **condition** when applicable
 - Applies conservative low-expression filtering
 - Uses **DESeq2** for differential expression analysis
 - Dynamically incorporates **biological covariates** (e.g. sex, age, strain) when available and informative
@@ -33,14 +33,14 @@ Key features:
 For each organism, the script performs the following steps:
 	1.	Iterate over all experiments (GSEs)
 	2.	Within each experiment:
-	•	Split samples into homogeneous strata based on treatment and/or cell type
+	•	Split samples into homogeneous strata based on treatment, cell type or condition
 	3.	Within each stratum:
 	•	Identify all genotypes present
 	•	For each non-WT genotype:
 		- Perform a WT vs genotype differential expression analysis
 		- Apply conservative expression filtering
-	  - Fit a DESeq2 model with genotype as the main effect
-	  - Include additional covariates (sex, age, strain) only if informative
+	•	Fit a DESeq2 model with genotype as the main effect
+	•	Include additional covariates (sex, age, strain) only if informative
 ```
 Each contrast is analyzed independently and saved as a separate result file.
 
@@ -103,7 +103,13 @@ The script creates the following directory structure in the specified output dir
 ```text
 out_dir/
 ├── results/
-│   └── <GSE_ID>_<stratum>_<genotype>_vs_WT_deseq2.parquet
+│   ├── <GSE_ID>/
+│   │   ├── <GSE_ID>_<stratum>_<genotype>_vs_WT_deseq2.parquet
+│   │   ├── <GSE_ID>_<stratum>_<genotype>_vs_WT_deseq2.parquet
+│   │   └── ...
+│   ├── <GSE_ID>/
+│   │   └── ...
+│   └── ...
 └── logs/
     └── errors.log
 ```
