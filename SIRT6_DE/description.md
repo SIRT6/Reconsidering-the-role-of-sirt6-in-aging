@@ -19,7 +19,7 @@ Key features:
 - Uses sample metadata from the SIRT6 database
 - Performs genotype-resolved comparisons:
   - WT vs each non-WT genotype (e.g. KO, Het, OE, mutant)
-- Stratifies experiments by **treatment**, **cell type** or **condition** when applicable
+- Stratifies experiments by **treatment**, **cell type**, **tissue** or **condition** when applicable
 - Applies conservative low-expression filtering
 - Uses **DESeq2** for differential expression analysis
 - Dynamically incorporates **biological covariates** (e.g. sex, age, strain) when available and informative
@@ -33,7 +33,7 @@ Key features:
 For each organism, the script performs the following steps:
 	1.	Iterate over all experiments (GSEs)
 	2.	Within each experiment:
-	•	Split samples into homogeneous strata based on treatment, cell type or condition
+	•	Split samples into homogeneous strata based on treatment, cell type, tissue or condition
 	3.	Within each stratum:
 	•	Identify all genotypes present
 	•	For each non-WT genotype:
