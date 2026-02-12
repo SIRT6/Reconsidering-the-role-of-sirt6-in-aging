@@ -127,7 +127,7 @@ for (i in seq_along(expr_files)) { # One iteration = one GSE
     ########################################
     
     # Ensure consistent encoding for stratification columns
-    for (v in c("treatment", "cell_type", "condition")) {
+    for (v in c("treatment", "cell_type", "condition", "tissue")) {
       if (v %in% colnames(meta)) {
         meta[[v]] <- trimws(as.character(meta[[v]]))
       }
@@ -143,7 +143,7 @@ for (i in seq_along(expr_files)) { # One iteration = one GSE
     strata <- list(all = seq_len(nrow(meta))) # default: no splitting
     
     # Candidate splitting variables
-    strat_vars <- c("treatment", "cell_type", "condition")
+    strat_vars <- c("treatment", "cell_type", "condition", "tissue")
     
     for (v in strat_vars) {
       if (v %in% colnames(meta)) {
