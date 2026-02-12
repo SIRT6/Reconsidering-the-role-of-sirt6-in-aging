@@ -122,28 +122,23 @@ for (i in seq_along(expr_files)) { # One iteration = one GSE
     # Subsets metadata to match the count matrix
     meta <- samples_meta[samples, , drop = FALSE]
     
-    ########################################
-    ## Normalize stratification variables ##
-    ########################################
-    
-    # Ensure consistent encoding for stratification columns
-    for (v in c("treatment", "cell_type", "condition", "tissue")) {
-      if (v %in% colnames(meta)) {
-        meta[[v]] <- trimws(as.character(meta[[v]]))
-      }
-    }
-  
-    
     ##############################
     ## Define stratification #####
     ##############################
     
-    # Split experiments by confounding factors (treatment/cell type/condition) -> run separate DE per treatment/cell type/condition
+    # Split experiments by confounding factors (treatment/cell type/condition/tissue) -> run separate DE per treatment/cell type/condition/tissue
     
     strata <- list(all = seq_len(nrow(meta))) # default: no splitting
     
     # Candidate splitting variables
     strat_vars <- c("treatment", "cell_type", "condition", "tissue")
+    
+    # Normalize stratification variables
+    for (v in strat_vars) {
+      if (v %in% colnames(meta)) {
+        meta[[v]] <- trimws(as.character(meta[[v]]))
+      }
+    }
     
     for (v in strat_vars) {
       if (v %in% colnames(meta)) {
