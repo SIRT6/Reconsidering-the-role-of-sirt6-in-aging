@@ -50,7 +50,7 @@ sample2exp <- read_parquet(
 )
 
 # Drop columns in meta consisting of NaNs only
-samples_meta <- samples_meta[, colSums(is.na(samples_meta)) == 0]
+samples_meta <- samples_meta[, colSums(!is.na(samples_meta)) > 0]
 
 #########################
 ###### Discover GSEs ####
@@ -246,6 +246,11 @@ for (i in seq_along(expr_files)) { # One iteration = one GSE
               usable_covariates <- c(usable_covariates, v)
             }
           }
+        }
+        
+        # Sanitize covariate levels (make them R-safe)
+        for (v in usable_covariates) {
+          meta_g[[v]] <- factor(make.names(meta_g[[v]]))
         }
         
         # Final design terms:
