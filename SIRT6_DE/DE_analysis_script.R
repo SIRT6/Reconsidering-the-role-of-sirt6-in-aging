@@ -303,6 +303,25 @@ for (i in seq_along(expr_files)) { # One iteration = one GSE
         s_safe <- gsub("[^A-Za-z0-9._-]", "_", s)
         g_file <- gsub("[^A-Za-z0-9._-]", "_", g)
         
+        # Save normalized count matrix in a parquet format
+        message("Saving normalized count matrix...")
+        
+        norm_counts <- counts(dds, normalized = TRUE)
+        norm_out <- as.data.frame(norm_counts) %>%
+          rownames_to_column("gene_id")
+        
+        write_parquet(
+          norm_out,
+          file.path(
+            gse_out_dir,
+            paste0(
+              gse, "_",
+              s_safe, "_",
+              g_file, "_vs_WT_normalized_counts.parquet"
+            )
+          )
+        )
+        
         # Save DE results in parquet format
         write_parquet(
           out,
