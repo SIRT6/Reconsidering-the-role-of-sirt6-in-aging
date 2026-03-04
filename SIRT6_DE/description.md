@@ -23,7 +23,8 @@ Key features:
 - Applies conservative low-expression filtering
 - Uses **DESeq2** for differential expression analysis
 - Dynamically incorporates **biological covariates** (e.g. sex, age, strain) when available and informative
-- Writes results in **Parquet** format for downstream meta-analysis
+- Writes normalized count matrices for each of the experimnt in **Parquet** format for downstream meta-analysis
+- Writes DE results in **Parquet** format for downstream meta-analysis
 
 ---
 
@@ -104,8 +105,9 @@ The script creates the following directory structure in the specified output dir
 out_dir/
 ├── results/
 │   ├── <GSE_ID>/
-│   │   ├── <GSE_ID>_<stratum>_<genotype>_vs_WT_deseq2.parquet
-│   │   ├── <GSE_ID>_<stratum>_<genotype>_vs_WT_deseq2.parquet
+│   │   ├── <GSE_ID>_<stratum>_<genotype>_vs_WT_deseq2.parquet (DE result)
+|   |   |── <GSE_ID>_<stratum>_<genotype>_vs_WT_normalized_count.parquet (normalized count matrix)
+│   │   ├── <GSE_ID>_<stratum>_<genotype>_vs_WT_deseq2.parquet (DE result)
 │   │   └── ...
 │   ├── <GSE_ID>/
 │   │   └── ...
@@ -117,7 +119,7 @@ out_dir/
 
 - results/
 
-Each file is a data frame in parquet format that contains DESeq2 results (log2FC, adjusted p-value)for a single contrast (WT vs one genotype) within a specific experiment and stratum.
+Each file is a data frame in parquet format that contains DESeq2 results (log2FC, adjusted p-value) for a single contrast (WT vs one genotype) within a specific experiment and stratum. Also for each of the experiment there is a parquet file that contains normalized count matrix for the downstream analysis.
 
 - logs/errors.log
 
