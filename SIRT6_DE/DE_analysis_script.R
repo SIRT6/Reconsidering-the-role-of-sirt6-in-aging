@@ -303,12 +303,39 @@ for (i in seq_along(expr_files)) { # One iteration = one GSE
         s_safe <- gsub("[^A-Za-z0-9._-]", "_", s)
         g_file <- gsub("[^A-Za-z0-9._-]", "_", g)
         
-        # Save normalized count matrix in a parquet format
+        ##################################################
+        # Save normalized count matrix in parquet format
+        ##################################################
+        
         message("Saving normalized count matrix...")
         
         norm_counts <- counts(dds, normalized = TRUE)
+        
+        ##################################################
+        # Rename sample columns using genotype labels
+        ##################################################
+        
+        sample_labels <- meta_g %>%
+          mutate(
+            genotype_clean = genotype
+          ) %>%
+          group_by(genotype_clean) %>%
+          mutate(
+            replicate = row_number(),
+            new_name = paste0(genotype_clean, "-", replicate)
+          ) %>%
+          ungroup()
+        
+        # Assign new column names (order matches counts matrix)
+        colnames(norm_counts) <- sample_labels$new_name
+        
+        ##################################################
+        # Convert to dataframe and add gene_id column
+        ##################################################
+        
         norm_out <- as.data.frame(norm_counts) %>%
           rownames_to_column("gene_id")
+        
         
         write_parquet(
           norm_out,
