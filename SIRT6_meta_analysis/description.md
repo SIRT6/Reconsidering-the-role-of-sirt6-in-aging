@@ -74,12 +74,6 @@ The following R packages are required:
 - `ggplot2`
 - `ggrepel`
 
-Install missing packages using:
-
-```r
-install.packages(c("dplyr","data.table","metafor","ggplot2","ggrepel"))
-```
-
 ---
 
 ## Input data
@@ -131,20 +125,6 @@ This table contains experiment metadata including:
 - `biological_system`
 
 These annotations are used to describe biological context in forest plots.
-
----
-
-## Usage
-
-Run the script from the command line using **Rscript**.
-
-### Example command
-
-```bash
-Rscript meta_analysis_script.R
-```
-
-The script reads input tables from predefined paths within the SIRT6 database.
 
 ---
 
@@ -258,6 +238,8 @@ Each forest plot shows:
 - combined meta-analysis estimate
 
 Squares represent **individual study effects**.
+
+The size of square represents **weight of particular experiment in meta analysis**.
 
 The diamond represents the **combined meta-analysis estimate**.
 
