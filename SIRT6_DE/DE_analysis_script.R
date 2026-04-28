@@ -25,6 +25,7 @@ organism <- get_arg("--organism") # The organism
 expr_path <- get_arg("--expr_path") # Count matrix
 meta_path <- get_arg("--meta_path") # Meta data
 out_dir <- get_arg("--out_dir") # Output dir
+cellfrac_path <- get_arg("--cellfrac_path")
 
 # Prevent from mistake
 if (is.null(expr_path) || is.null(meta_path) ||
@@ -122,6 +123,21 @@ for (i in seq_along(expr_files)) { # One iteration = one GSE
     # Subsets metadata to match the count matrix
     meta <- samples_meta[samples, , drop = FALSE]
     
+    cell_props <- NULL
+    has_cellprops <- FALSE
+    
+    if (!is.null(cellfrac_path)) {
+      cell_props_file <- file.path(cellfrac_path, paste0(gse, "_props.parquet"))
+      
+      if (file.exists(cell_props_file)) {
+        cell_props <- read_parquet(cell_props_file) %>%
+          column_to_rownames("sample_id")
+        
+        has_cellprops <- TRUE
+      }
+    }
+    
+    message("Cell proportions: ", ifelse(has_cellprops, "USED", "NOT USED"))
     ##############################
     ## Define stratification #####
     ##############################
@@ -195,6 +211,23 @@ for (i in seq_along(expr_files)) { # One iteration = one GSE
         meta_g <- meta_s %>%
           dplyr::filter(genotype %in% c("WT", g))
         
+        use_celltypes <- FALSE
+        
+        if (has_cellprops) {
+          
+          common_samples <- intersect(rownames(meta_g), rownames(cell_props))
+          
+          if (length(common_samples) >= 4) {
+            
+            meta_g <- meta_g[common_samples, , drop = FALSE]
+            counts_g <- counts_s[, common_samples, drop = FALSE]
+            
+            meta_g <- cbind(meta_g, cell_props[common_samples, , drop = FALSE])
+            
+            use_celltypes <- TRUE
+          }
+        }
+        
         message("Sample counts:")
         print(table(meta_g$genotype))
         
@@ -250,7 +283,18 @@ for (i in seq_along(expr_files)) { # One iteration = one GSE
         
         # Final design terms:
         # covariates first, genotype last (as it's effect of interest)
-        design_terms <- c(usable_covariates, "genotype_cmp")
+        if (use_celltypes) {
+          
+          cell_vars <- setdiff(colnames(cell_props), colnames(meta_g))
+          cell_vars <- intersect(cell_vars, colnames(meta_g))
+          
+          cell_vars <- cell_vars[sapply(meta_g[, cell_vars, drop = FALSE], sd, na.rm = TRUE) > 0]
+          
+          design_terms <- c(usable_covariates, cell_vars, "genotype_cmp")
+          
+        } else {
+          design_terms <- c(usable_covariates, "genotype_cmp")
+        }
         
         design_formula <- as.formula(
           paste("~", paste(design_terms, collapse = " + "))
