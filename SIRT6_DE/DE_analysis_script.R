@@ -133,6 +133,8 @@ for (i in seq_along(expr_files)) { # One iteration = one GSE
         cell_props <- read_parquet(cell_props_file) %>%
           column_to_rownames("sample_id")
         
+        colnames(cell_props) <- make.names(colnames(cell_props))
+        
         has_cellprops <- TRUE
       }
     }
@@ -222,6 +224,9 @@ for (i in seq_along(expr_files)) { # One iteration = one GSE
             meta_g <- meta_g[common_samples, , drop = FALSE]
             counts_g <- counts_s[, common_samples, drop = FALSE]
             
+            message("alignment AFTER subset: ",
+                    identical(colnames(counts_g), rownames(meta_g)))
+            
             meta_g <- cbind(meta_g, cell_props[common_samples, , drop = FALSE])
             
             use_celltypes <- TRUE
@@ -285,25 +290,48 @@ for (i in seq_along(expr_files)) { # One iteration = one GSE
         # covariates first, genotype last (as it's effect of interest)
         if (use_celltypes) {
           
-          cell_vars <- setdiff(colnames(cell_props), colnames(meta_g))
-          cell_vars <- intersect(cell_vars, colnames(meta_g))
+          cell_vars <- intersect(colnames(cell_props), colnames(meta_g))
           
-          cell_vars <- cell_vars[sapply(meta_g[, cell_vars, drop = FALSE], sd, na.rm = TRUE) > 0]
+          sds <- sapply(meta_g[, cell_vars, drop = FALSE], sd, na.rm = TRUE)
+          cell_vars <- cell_vars[sds > 0]
           
-          design_terms <- c(usable_covariates, cell_vars, "genotype_cmp")
+          if (length(cell_vars) >= 2) {
+            
+            # PCA
+            pca <- prcomp(meta_g[, cell_vars, drop = FALSE], scale. = TRUE)
+            
+            meta_g$PC1 <- pca$x[,1]
+            meta_g$PC2 <- pca$x[,2]
+            
+            message("PCA variance explained:")
+            print(summary(pca))
+            
+            design_terms <- c(usable_covariates, "PC1", "PC2", "genotype_cmp")
+            
+          } else {
+            
+            # fallback
+            design_terms <- c(usable_covariates, "genotype_cmp")
+          }
           
         } else {
           design_terms <- c(usable_covariates, "genotype_cmp")
         }
+        
+        design_terms <- make.names(design_terms)
         
         design_formula <- as.formula(
           paste("~", paste(design_terms, collapse = " + "))
         )
         
         message("Design formula: ", deparse(design_formula))
+        message("FINAL design terms: ", paste(design_terms, collapse = " + "))
+        message("Samples in model: ", nrow(meta_g))
         
         # Build DESeq object
         
+        message("FINAL alignment check: ",
+                identical(colnames(counts_f), rownames(meta_g)))
         dds <- DESeqDataSetFromMatrix(
           countData = round(counts_f),
           colData = meta_g,
