@@ -1,6 +1,10 @@
 source("~/SIRT6_db/functions/custom_theme_ggplot2.R")
 
+library(dplyr)
+
 meta <- read.csv("~/SIRT6_db/meta_analysis/table_for_meta_analysis.csv")
+
+length(unique(meta$human_gene_id))
 
 unique(meta$contrast)
 
@@ -61,10 +65,8 @@ cat("Unique species:", length(unique(meta_ko$organism)), "\n")
 
 library(ape)
 
-# Newick tree with divergence times (in Mya from TimeTree.org)
-# Topology: ((((Homo, Macaca), (Mus, Rattus)), Sus), Drosophila)
-tree_text <- "((((Homo_sapiens:28.8,Macaca_fascicularis:28.8):58.2,(Mus_musculus:13.1,Rattus_norvegicus:13.1):73.9):7,Sus_scrofa:94):592,Drosophila_melanogaster:686);"
-phylo_tree <- read.tree(text = tree_text)
+# Upload Newick tree with divergence times
+phylo_tree <- read.tree("~/SIRT6_db/meta_analysis/six_species_tree.tre")
 
 # Clean up tip labels for display
 phylo_tree$tip.label <- gsub("_", " ", phylo_tree$tip.label)
@@ -86,6 +88,42 @@ title(xlab = "Divergence time (Mya)")
 
 # Compute the phylogenetic correlation matrix
 phylo_cor <- vcv(phylo_tree, corr = TRUE)
+
+
+library(ggplot2)
+
+# 1. Convert the matrix into a long-format data frame for ggplot2
+phylo_df <- as.data.frame(as.table(phylo_cor))
+colnames(phylo_df) <- c("Species1", "Species2", "Correlation")
+
+# 2. Create the ggplot2 heatmap
+ggplot(data = phylo_df, aes(x = Species1, y = Species2, fill = Correlation)) +
+  # Create the tile grid
+  geom_tile(color = "white", lwd = 0.5, linetype = 1) +
+  
+  # Overlay the correlation numbers rounded to 2 decimal places
+  geom_text(aes(label = round(Correlation, 2)), color = "black", size = 4) +
+  
+  # Define a color gradient (low values are soft blue, high values are warm orange)
+  scale_fill_gradient2(low = "#6D9EC1", mid = "white", high = "#E46726", 
+                       midpoint = 0.5, limit = c(0, 1), space = "Lab", 
+                       name = "Correlation") +
+  
+  # Use a clean minimal theme
+  theme_minimal() + 
+  
+  # Rotate X-axis labels to prevent overlap
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1, size = 11),
+        axis.text.y = element_text(size = 11),
+        axis.title.x = element_blank(),
+        axis.title.y = element_blank(),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank()) +
+  
+  # Set titles and force square tile ratios
+  labs(title = "Phylogenetic correlation heatmap") +
+  coord_fixed()
+
 
 all(unique(meta_ko$organism) %in% rownames(phylo_cor))
 
@@ -171,8 +209,6 @@ run_meta_mv <- function(logFC, se, experiment_id, species, phylo_cor) {
 }
 
 
-
-
 # Convert to data.table (important for fast grouped computation)
 setDT(meta_ko)
 
@@ -234,13 +270,6 @@ meta_results_ko$diffexpressed[meta_results_ko$meta_LFC < -0.58 & meta_results_ko
 # Fill NAs with "Insignificant"
 meta_results_ko$diffexpressed[is.na(meta_results_ko$diffexpressed)] <- "Insignificant"
 
-# save the table only with DEGs
-diffgenes <- meta_results_ko %>%
-  filter(meta_results_ko$diffexpressed != "Insignificant")
-write.csv(diffgenes,
-          "~/SIRT6_db/meta_analysis/meta_diffgenes_KO_rma_mv.csv",
-          row.names = FALSE)
-
 # Count DEGs
 counts <- meta_results_ko %>%
   dplyr::count(diffexpressed)
@@ -260,14 +289,21 @@ gene_map <- orthologs %>%
 meta_results_ko <- meta_results_ko %>%
   left_join(gene_map, by = "human_gene_id")
 
-# Select significant genes for labeling
-library(ggrepel)
-sig_genes <- meta_results_ko %>%
-  filter(diffexpressed != "Insignificant")
+# save the table only with DEGs
+diffgenes <- meta_results_ko %>%
+  filter(meta_results_ko$diffexpressed != "Insignificant")
+write.csv(diffgenes,
+          "~/SIRT6_db/meta_analysis/meta_diffgenes_KO_rma_mv_nested.csv",
+          row.names = FALSE)
 
 # Count the number of significant genes (FDR < 0.05)
-df <- meta_results_ko %>%
-  filter(meta_results_ko$FDR < 0.05) # the number of rows is 605 => 605 significant genes
+siggenes <- meta_results_ko %>%
+  filter(meta_results_ko$FDR < 0.05) 
+
+write.csv(siggenes,
+          "~/SIRT6_db/meta_analysis/meta_siggenes_KO_rma_mv_nested.csv",
+          row.names = FALSE)
+
 
 
 
@@ -275,7 +311,6 @@ df <- meta_results_ko %>%
 ## I. Volcano plot with heterogeneity (size) ###
 ################################################
 
-library(ggplot2)
 library(ggrepel)
 
 # 1. Prepare data
@@ -487,6 +522,11 @@ scale_size_continuous(
   trans = "sqrt"
 ) +
   
+  scale_x_continuous(
+    breaks = c(-3, -2, -1, 0, 1, 2, 3),
+    labels = c("-3", "-2", "-1", "0", "1", "2", "3")
+  ) +
+  coord_cartesian(xlim = c(-3, 3)) +
   
 # Labels and theme
 labs(
@@ -600,12 +640,10 @@ library(stringr)
 # 9. Create a function for constructing a forest plot
 plot_forest_gene <- function(gene_name, data, phylo_cor) {
   
-  # Prepare data
   gene_data <- data %>%
     filter(human_gene_symbol == gene_name) %>%
     arrange(organism, log2FoldChange)
   
-  # Nested multilevel meta-analysis with phylogenetic correction
   res <- rma.mv(
     yi = log2FoldChange,
     V  = lfcSE^2,
@@ -616,11 +654,9 @@ plot_forest_gene <- function(gene_name, data, phylo_cor) {
     control = list(iter.max = 1000, rel.tol = 1e-8)
   )
   
-  # Build aligned labels 
   species_width <- max(nchar(gene_data$organism_short), na.rm = TRUE)
   exp_width     <- max(nchar(gene_data$experiment_id), na.rm = TRUE)
   
-  # Create aligned labels
   labels <- sprintf(
     paste0("%-", species_width, "s | %-", exp_width, "s | %s"),
     gene_data$organism_short,
@@ -628,59 +664,77 @@ plot_forest_gene <- function(gene_name, data, phylo_cor) {
     gene_data$biological_system
   )
   
-  # Header aligned the same way
   header <- sprintf(
     paste0("%-", species_width, "s | %-", exp_width, "s | %s"),
     "Species", "Experiment", "System"
   )
   
-  # 4. Margins + monospace font 
+  # Background colors per organism (semi-transparent)
+  organism_bg <- c(
+    "Homo sapiens"             = adjustcolor("pink2", alpha.f = 0.25),
+    "Mus musculus"             = adjustcolor("skyblue2", alpha.f = 0.25),
+    "Rattus norvegicus"        = adjustcolor("lightgreen", alpha.f = 0.25),
+    "Sus scrofa"               = adjustcolor("mediumpurple1", alpha.f = 0.25),
+    "Macaca fascicularis"      = adjustcolor("coral2", alpha.f = 0.25),
+    "Drosophila melanogaster"  = adjustcolor("#A65628", alpha.f = 0.25)
+  )
+  
   par(mar = c(4, 4, 5, 2))
   par(family = "mono")
   
-  # Forest plot
+  # Forest plot without shading
   forest(
     res,
     slab = labels,
     xlab = "log2 Fold Change (SIRT6 KO vs WT)",
     main = gene_name,
+    cex.main = 3,
     refline = 0,
-    cex = 1.2,
+    cex = 1.9,
+    cex.lab = 1.6,
+    cex.axis = 1.5,
     header = header,
     mlab = "",
-    shade = TRUE,
-    alim = c(-4, 4),           # fixed axis range for effect sizes
-    xlim = c(-10, 8)           # total plot width (left edge to right edge, includes labels)
+    alim = c(-4, 4),
+    xlim = c(-19, 12)
   )
+  
+  # Draw colored background rectangles per organism
+  k <- nrow(gene_data)
+  usr <- par("usr")
+  
+  for (i in 1:k) {
+    row_y <- k - i + 1
+    rect(
+      xleft   = usr[1],
+      ybottom = row_y - 0.5,
+      xright  = usr[2],
+      ytop    = row_y + 0.5,
+      col     = organism_bg[gene_data$organism[i]],
+      border  = NA
+    )
+  }
   
   # Add meta-analysis diamond
-  addpoly(
-    res,
-    row = -1,
-    mlab = "",
-    col = "firebrick",
-    border = "firebrick"
-  )
+  addpoly(res, row = -1, mlab = "", col = "firebrick", border = "firebrick")
   
-  # Heterogeneity stats (multilevel)
+  # Heterogeneity stats
   tau2_total <- sum(res$sigma2)
   tau2_phylo <- res$sigma2[1]
   tau2_experiment <- res$sigma2[2]
   I2 <- 100 * tau2_total / (tau2_total + mean(gene_data$lfcSE^2))
   
-  usr <- par("usr")
-  line_height = 1.1
+  line_height <- 1.1
   base_y <- usr[3] + 0.3
   
-  text(x = usr[1], y = base_y + line_height, pos = 4, cex = 1,
+  text(x = usr[1], y = base_y + line_height, pos = 4, cex = 1.7,
        "Multilevel model:")
   
-  text(x = usr[1], y = base_y, pos = 4, cex = 1,
+  text(x = usr[1], y = base_y, pos = 4, cex = 1.7,
        bquote(I^2 ~ "=" ~ .(formatC(I2, digits = 1, format = "f")) * "%," ~
                 tau[phylo]^2 ~ "=" ~ .(formatC(tau2_phylo, digits = 3, format = "e")) * "," ~
                 tau[exp]^2 ~ "=" ~ .(formatC(tau2_experiment, digits = 3, format = "e"))))
 }
-
 
 # 10. Save 
 out_dir <- "~/SIRT6_db/meta_analysis/"
@@ -688,8 +742,8 @@ out_dir <- "~/SIRT6_db/meta_analysis/"
 # APLN
 png(
   filename = paste0(out_dir, "forest_APLN.png"),
-  width = 9300,
-  height = 4000,
+  width = 10000,
+  height = 7500,
   res = 600
 )
 
@@ -702,8 +756,8 @@ dev.off()
 # ZNF518A
 png(
   filename = paste0(out_dir, "forest_ZNF518A.png"),
-  width = 9500,
-  height = 6000,
+  width = 11000,
+  height = 9000,
   res = 600
 )
 
@@ -712,6 +766,11 @@ par(family = "mono")
 plot_forest_gene("ZNF518A", meta_ko, phylo_cor)
 
 dev.off()
+
+
+
+
+
 
 
 
@@ -751,12 +810,16 @@ msig_hallmark <- msigdbr(             # download gene sets
 hallmark_sets <- msig_hallmark %>%
   dplyr::select(gs_name, gene_symbol)
 
+set.seed(42)
+
 # Run GSEA
 gsea_res_ko <- GSEA(
   geneList = gene_vector,
   TERM2GENE = hallmark_sets,
   pAdjustMethod = "BH",
-  verbose = FALSE
+  pvalueCutoff = 1,
+  verbose = FALSE,
+  seed = TRUE
 )
 
 
@@ -800,8 +863,12 @@ gsea_df$Description <- factor(
     pull(Description)
 )
 
+# Filter only significant pathways
+gsea_df_sig <- gsea_df %>%
+  filter(p.adjust < 0.05)
+
 # 4. Plot
-ggplot(gsea_df, aes(x = GeneRatio, y = Description)) +
+ggplot(gsea_df_sig, aes(x = GeneRatio, y = Description)) +
   
 # Points
 geom_point(
@@ -909,29 +976,15 @@ p5 <- gseaplot2(
 print(p5)
 
 
-
-# Overlaying related pathways to show a metabolic shift
-p_combined <- gseaplot2(
-  gsea_res_ko,
-  geneSetID = c("HALLMARK_OXIDATIVE_PHOSPHORYLATION", "HALLMARK_HYPOXIA"),
-  title = "SIRT6 metabolic reprogramming",
-  color = c("#E64B35", "#4DBBD5"), # Contrast Blue (OxPhos) vs Red (Hypoxia)
-  pvalue_table = TRUE
-)
-
-p_combined
-
-
-
-# Visualizing the suppression of cell cycle/proliferation
+# Visualizing the suppression of cell cycle/proliferation and metabolic reprogramming
 p_cell_cycle <- gseaplot2(
   gsea_res_ko,
-  geneSetID = c("HALLMARK_E2F_TARGETS", 
-                "HALLMARK_G2M_CHECKPOINT", 
-                "HALLMARK_MYC_TARGETS_V1",
-                "HALLMARK_MYC_TARGETS_V2"),
-  title = "SIRT6 deficiency leads to cell cycle arrest",
-  color = c("#08306B", "#2171B5", "#6BAED6", "#6BA"), # Using a distinct palette
+  geneSetID = c("HALLMARK_G2M_CHECKPOINT", 
+                "HALLMARK_OXIDATIVE_PHOSPHORYLATION", 
+                "HALLMARK_MYC_TARGETS_V1"
+                ),
+  title = "SIRT6 deficiency leads to cell cycle arrest and metabolic reprogramming",
+  color = c("#08306B", "#2171B5", "#6BA"), # Using a distinct palette
   pvalue_table = TRUE
 )
 
@@ -942,10 +995,11 @@ p_cell_cycle
 p_inflammaging <- gseaplot2(
   gsea_res_ko,
   geneSetID = c("HALLMARK_TNFA_SIGNALING_VIA_NFKB", 
-                "HALLMARK_INFLAMMATORY_RESPONSE", 
-                "HALLMARK_COMPLEMENT"),
-  title = "SIRT6 deficiency leads to enhanced inflammatory signaling",
-  color = c("#E64B35FF", "#F39B7FFF", "#DC0000FF"), # Warm palette for activation
+                "HALLMARK_COMPLEMENT",
+                "HALLMARK_APICAL_JUNCTION",
+                "HALLMARK_EPITHELIAL_MESENCHYMAL_TRANSITION"),
+  title = "SIRT6 deficiency leads to enhanced inflammatory signaling and tissue remodeling",
+  color = c("#E64B35FF", "#F39B7FFF", "#DC0000FF", "#B22222"), # Warm palette for activation
   pvalue_table = TRUE
 )
 
