@@ -25,7 +25,7 @@ organism <- get_arg("--organism") # The organism
 expr_path <- get_arg("--expr_path") # Count matrix
 meta_path <- get_arg("--meta_path") # Meta data
 out_dir <- get_arg("--out_dir") # Output dir
-cellfrac_path <- get_arg("--cellfrac_path")
+cellfrac_path <- get_arg("--cellfrac_path") # cell proportions
 
 # Prevent from mistake
 if (is.null(expr_path) || is.null(meta_path) ||
@@ -123,6 +123,7 @@ for (i in seq_along(expr_files)) { # One iteration = one GSE
     # Subsets metadata to match the count matrix
     meta <- samples_meta[samples, , drop = FALSE]
     
+    # Load cell-type proportions
     cell_props <- NULL
     has_cellprops <- FALSE
     
@@ -212,17 +213,27 @@ for (i in seq_along(expr_files)) { # One iteration = one GSE
         # Subset for contrast
         meta_g <- meta_s %>%
           dplyr::filter(genotype %in% c("WT", g))
+
+        # Initialise counts_g
+        counts_g <- counts_s[, rownames(meta_g), drop = FALSE]
         
+        # Integrate cell-type proportions
         use_celltypes <- FALSE
         
         if (has_cellprops) {
           
           common_samples <- intersect(rownames(meta_g), rownames(cell_props))
-          
+          message("  Samples with cell proportions: ", length(common_samples),
+                  " of ", nrow(meta_g))
+
           if (length(common_samples) >= 4) {
             
+            # Subset both objects to the same ordered sample set
             meta_g <- meta_g[common_samples, , drop = FALSE]
-            counts_g <- counts_s[, common_samples, drop = FALSE]
+            counts_g <- counts_g[, common_samples, drop = FALSE]
+
+            # Sanity check: columns of counts must equal rows of meta
+            stopifnot(identical(colnames(counts_g), rownames(meta_g)))
             
             message("alignment AFTER subset: ",
                     identical(colnames(counts_g), rownames(meta_g)))
@@ -230,6 +241,9 @@ for (i in seq_along(expr_files)) { # One iteration = one GSE
             meta_g <- cbind(meta_g, cell_props[common_samples, , drop = FALSE])
             
             use_celltypes <- TRUE
+          } else {
+            message("  Too few samples with proportions (< 4); ",
+                    "cell props skipped for this contrast")
           }
         }
         
@@ -237,9 +251,6 @@ for (i in seq_along(expr_files)) { # One iteration = one GSE
         print(table(meta_g$genotype))
         
         if (any(table(meta_g$genotype) < 2)) next
-        
-        # Subset counts to the same samples
-        counts_g <- counts_s[, rownames(meta_g), drop = FALSE]
         
         # Define comparison variable
         meta_g$genotype_cmp <- factor(
@@ -289,11 +300,15 @@ for (i in seq_along(expr_files)) { # One iteration = one GSE
         # Final design terms:
         # covariates first, genotype last (as it's effect of interest)
         if (use_celltypes) {
-          
+
+          # PCA on cell-type proportions to avoid perfect multicollinearity
+          # (proportions sum to 1 → one degree of freedom is redundant).
+          # PC1 + PC2 capture most compositional variation while staying
+          # orthogonal and not perfectly collinear with genotype.
           cell_vars <- intersect(colnames(cell_props), colnames(meta_g))
           
           sds <- sapply(meta_g[, cell_vars, drop = FALSE], sd, na.rm = TRUE)
-          cell_vars <- cell_vars[sds > 0]
+          cell_vars <- cell_vars[sds > 0]   # drop zero-variance types
           
           if (length(cell_vars) >= 2) {
             
@@ -304,13 +319,30 @@ for (i in seq_along(expr_files)) { # One iteration = one GSE
             meta_g$PC2 <- pca$x[,2]
             
             message("PCA variance explained:")
-            print(summary(pca))
+            print(summary(pca)$importance[, 1:min(3, ncol(pca$x))])
+
+            # Guard against PC–genotype collinearity: if |r| > 0.9
+            # the PC is essentially a proxy for genotype and must be excluded
+            # to keep the model identifiable.
+            pc_terms <- c()
+            for (pc in c("PC1", "PC2")) {
+              r <- cor(meta_g[[pc]], as.numeric(meta_g$genotype_cmp),
+                       use = "complete.obs")
+              message("  cor(", pc, ", genotype) = ", round(r, 3))
+              if (abs(r) <= 0.9) {
+                pc_terms <- c(pc_terms, pc)
+              } else {
+                message("  WARNING: ", pc,
+                        " is collinear with genotype (|r| > 0.9); excluded from design")
+              }
+            }
             
-            design_terms <- c(usable_covariates, "PC1", "PC2", "genotype_cmp")
+            design_terms <- c(usable_covariates, pc_terms, "genotype_cmp")
             
           } else {
-            
             # fallback
+            message("  Too few variable cell types for PCA; ",
+                    "cell props not added to design")
             design_terms <- c(usable_covariates, "genotype_cmp")
           }
           
